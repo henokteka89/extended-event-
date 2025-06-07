@@ -68,3 +68,42 @@ GO
 ALTER EVENT SESSION [QueryPerformanceanalysis] ON SERVER  
 STATE = START;
 GO
+
+
+
+===================================================================================================================================================
+===================================================================================================================================================
+ WITH EventsCTE AS (
+    SELECT
+        X.value('(@name)[1]', 'varchar(50)') AS event_name,
+        X.value('(*:data[@name="cpu_time"]/*:value)[1]', 'bigint') AS cpu_time_us,
+        X.value('(*:data[@name="logical_reads"]/*:value)[1]', 'bigint') AS logical_reads,
+        X.value('(*:data[@name="writes"]/*:value)[1]', 'bigint') AS writes,
+        X.value('(*:data[@name="duration"]/*:value)[1]', 'bigint') AS duration_us,
+        X.value('(*:action[@name="session_id"]/*:value)[1]', 'int') AS session_id,
+        X.value('(*:action[@name="sql_text"]/*:value)[1]', 'nvarchar(max)') AS sql_text,
+        X.value('(@timestamp)[1]', 'datetime2') AS event_time,
+        CASE WHEN X.value('(@name)[1]', 'varchar(50)') IN ('sql_statement_recompile', 'query_post_compilation_showplan') THEN 1 ELSE 0 END AS is_compile_or_recompile
+    FROM (
+        SELECT CAST(event_data AS XML) AS event_data
+        FROM sys.fn_xe_file_target_read_file('QueryPerformanceCapture*.xel', NULL, NULL, NULL)
+    ) AS RawXE
+    CROSS APPLY event_data.nodes('/*:event') AS T(X)
+    WHERE X.value('(@name)[1]', 'varchar(50)') IN ('sp_statement_completed', 'sql_statement_recompile', 'query_post_compilation_showplan')
+      AND X.value('(*:action[@name="sql_text"]/*:value)[1]', 'nvarchar(max)') NOT LIKE '%dm_xe_objects%'
+      AND X.value('(*:action[@name="sql_text"]/*:value)[1]', 'nvarchar(max)') NOT LIKE '%sys.server_event_sessions%'
+)
+SELECT
+    comp.event_name,
+    comp.session_id,
+    comp.event_time,
+    comp.sql_text,
+    comp.cpu_time_us,
+    comp.logical_reads,
+    comp.writes,
+    comp.duration_us,
+    CASE WHEN comp.is_compile_or_recompile = 1 THEN 'Yes' ELSE 'No' END AS compile_or_recompile
+FROM EventsCTE comp
+WHERE (comp.[sql_text] LIKE N'%WHERE OrderType = @Type%') 
+--and event_name = 'sp_statement_completed'
+ORDER BY comp.event_time DESC;
