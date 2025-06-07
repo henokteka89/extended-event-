@@ -1,0 +1,70 @@
+-- Create an Extended Events session for detailed procedure/query performance analysis
+-- Replace the text with part of the query or stored proc name. Use the same text in each event. 
+CREATE EVENT SESSION [QueryPerformanceanalysis] ON SERVER 
+ADD EVENT sqlserver.sql_batch_completed (
+    ACTION (
+        sqlos.task_time,
+        sqlserver.client_app_name,
+        sqlserver.database_id,
+        sqlserver.server_principal_name,
+        sqlserver.session_id,
+        sqlserver.sql_text
+    )
+    WHERE (
+        sqlserver.sql_text LIKE N'%usp_GetOrders%' OR
+        sqlserver.sql_text LIKE N'%OrderType = @OrderType%'
+    )
+),
+ADD EVENT sqlserver.sql_statement_recompile (
+    ACTION (
+        sqlserver.client_app_name,
+        sqlserver.database_id,
+        sqlserver.session_id,
+        sqlserver.sql_text
+    )
+    WHERE (
+        sqlserver.sql_text LIKE N'%usp_GetOrders%'
+    )
+),
+ADD EVENT sqlserver.sp_statement_completed (
+    ACTION (
+        sqlserver.session_id,
+        sqlserver.sql_text,
+        sqlserver.client_app_name,
+        sqlserver.database_id
+    )
+    WHERE (
+        sqlserver.sql_text LIKE N'%usp_GetOrders%'
+    )
+),
+ADD EVENT sqlserver.query_post_compilation_showplan (
+    ACTION (
+        sqlserver.sql_text,
+        sqlserver.session_id,
+        sqlserver.client_app_name,
+        sqlserver.database_id
+    )
+    WHERE (
+        sqlserver.sql_text LIKE N'%usp_GetOrders%'
+    )
+)
+ADD TARGET package0.event_file (
+    SET filename = N'QueryPerformanceanalysis.xel',
+        max_file_size = 10MB,
+        max_rollover_files = 5
+)
+WITH (
+    MAX_MEMORY = 4096 KB,
+    EVENT_RETENTION_MODE = ALLOW_SINGLE_EVENT_LOSS,
+    MAX_DISPATCH_LATENCY = 30 SECONDS,
+    MAX_EVENT_SIZE = 0 KB,
+    MEMORY_PARTITION_MODE = NONE,
+    TRACK_CAUSALITY = OFF,
+    STARTUP_STATE = ON
+);
+GO
+
+-- Start the session
+ALTER EVENT SESSION [QueryPerformanceanalysis] ON SERVER  
+STATE = START;
+GO
